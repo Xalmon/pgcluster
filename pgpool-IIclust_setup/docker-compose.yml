@@ -1,0 +1,67 @@
+version: "3.8"
+
+services:
+  postgres-primary:
+    image: postgres:16
+    container_name: postgres-primary
+    environment:
+      POSTGRES_DB: mydatabase
+      POSTGRES_USER: myuser
+      POSTGRES_PASSWORD: mypassword
+    ports:
+      - "5432:5432"
+    networks:
+      - pg-net
+    volumes:
+      - primary-data:/var/lib/postgresql/data
+    command: >
+      postgres -c wal_level=replica
+               -c max_wal_senders=10
+               -c hot_standby=on
+               -c archive_mode=on
+
+  postgres-replica:
+    image: postgres:16
+    container_name: postgres-replica
+    environment:
+      POSTGRES_DB: mydatabase
+      POSTGRES_USER: myuser
+      POSTGRES_PASSWORD: mypassword
+    depends_on:
+      - postgres-primary
+    networks:
+      - pg-net
+    volumes:
+      - replica-data:/var/lib/postgresql/data
+    command: >
+      bash -c "rm -rf /var/lib/postgresql/data/*
+      && PGPASSWORD=mypassword pg_basebackup -h postgres-primary -D /var/lib/postgresql/data -U myuser -P -R
+      && exec postgres"
+
+  pgpool:
+    image: bitnami/pgpool
+    container_name: pgpool
+    environment:
+      PGPOOL_BACKEND_NODES: "0:postgres-primary:5432,1:postgres-replica:5432"
+      PGPOOL_SR_CHECK_USER: "myuser"
+      PGPOOL_SR_CHECK_PASSWORD: "mypassword"
+      PGPOOL_POSTGRES_USERNAME: "myuser"
+      PGPOOL_POSTGRES_PASSWORD: "mypassword"
+      PGPOOL_ENABLE_LOAD_BALANCING: "true"
+      PGPOOL_ENABLE_LOG_CONNECTIONS: "true"
+    depends_on:
+      - postgres-primary
+      - postgres-replica
+    ports:
+      - "5433:5432"
+    networks:
+      - pg-net
+
+networks:
+  pg-net:
+    driver: bridge
+
+volumes:
+  primary-data:
+  replica-data:
+
