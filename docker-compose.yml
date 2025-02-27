@@ -1,0 +1,51 @@
+version: "3.8"
+
+services:
+  postgres-primary:
+    image: postgres:16
+    container_name: postgres-primary
+    environment:
+      POSTGRES_DB: mydatabase
+      POSTGRES_USER: myuser
+      POSTGRES_PASSWORD: mypassword
+      PG_REP_USER: repl_user
+      PG_REP_PASSWORD: repl_password
+    ports:
+      - "5432:5432"
+    networks:
+      - pg-net
+    volumes:
+      - primary-data:/var/lib/postgresql/data
+    command: >
+      postgres -c wal_level=replica
+               -c max_wal_senders=10
+               -c wal_keep_size=64MB
+               -c hot_standby=on
+
+  postgres-replica:
+    image: postgres:16
+    container_name: postgres-replica
+    environment:
+      POSTGRES_DB: mydatabase
+      POSTGRES_USER: myuser
+      POSTGRES_PASSWORD: mypassword
+      PG_REP_USER: repl_user
+      PG_REP_PASSWORD: repl_password
+    depends_on:
+      - postgres-primary
+    networks:
+      - pg-net
+    volumes:
+      - replica-data:/var/lib/postgresql/data
+    command: >
+      bash -c "rm -rf /var/lib/postgresql/data/*
+      && PGPASSWORD=mypassword pg_basebackup -h postgres-primary -D /var/lib/postgresql/data -U repl_user -P -R
+      && exec postgres"
+
+networks:
+  pg-net:
+    driver: bridge
+
+volumes:
+  primary-data:
+  replica-data:
